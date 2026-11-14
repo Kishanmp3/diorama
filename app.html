@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diorama workshop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+:root{--ink:#1E2422;--mute:#5B655F;--line:rgba(30,36,34,.12);--cobalt:#2F4BFF;--white:#FBFBF7;--panel:rgba(251,251,247,.92)}
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+html,body{height:100%;overflow:hidden}
+body{font-family:"Bricolage Grotesque",system-ui,sans-serif;color:var(--ink);background:#C5CDC2;font-size:15px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2.5px solid var(--cobalt);outline-offset:2px}
+#c{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+.panel{position:fixed;top:14px;left:14px;bottom:14px;width:360px;background:var(--panel);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-radius:22px;box-shadow:0 30px 60px -30px rgba(30,36,34,.45);display:flex;flex-direction:column;z-index:10;overflow:hidden}
+.ph{display:flex;justify-content:space-between;align-items:center;padding:18px 20px 6px}
+.mark{font-weight:800;font-size:21px;letter-spacing:-.03em;text-decoration:none;color:var(--ink);display:flex;align-items:center;gap:9px}
+.mark i{width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 50% 35%,var(--white) 0 45%,transparent 46%),#B48A62}
+.link{all:unset;cursor:pointer;font-size:14px;color:var(--mute);text-decoration:underline;text-underline-offset:3px}
+.scroll{overflow:auto;padding:8px 20px 20px;flex:1}
+.blk{padding:16px 0;border-bottom:1px solid var(--line)}
+.blk:last-child{border-bottom:0}
+.blk h2{font-weight:700;font-size:20px;letter-spacing:-.02em;margin-bottom:10px}
+.field{display:flex;background:#fff;border-radius:12px;padding:4px;box-shadow:inset 0 0 0 1px var(--line)}
+.field input{flex:1;min-width:0;border:0;outline:0;background:transparent;padding:10px 10px;font-size:15px}
+.btn{border:0;background:var(--ink);color:var(--white);font-weight:600;padding:9px 16px;border-radius:9px;white-space:nowrap}
+.btn:hover{background:var(--cobalt)}
+.btn:disabled{opacity:.5;cursor:wait}
+.btn.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--ink)}
+.btn.ghost:hover{background:var(--ink);color:var(--white)}
+.radius{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;margin-top:12px;font-size:14px}
+.radius input{accent-color:var(--cobalt)}
+.radius output{font-variant-numeric:tabular-nums;font-weight:600;min-width:58px;text-align:right}
+.recent{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.recent button{border:0;background:rgba(30,36,34,.06);border-radius:20px;padding:4px 11px;font-size:13px}
+.recent button:hover{background:rgba(30,36,34,.12)}
+.place h1{font-weight:700;font-size:26px;letter-spacing:-.03em;line-height:1.05}
+.place p{color:var(--mute);font-size:13.5px;margin-top:4px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:14px;overflow:hidden;margin-top:14px}
+.stats div{background:#fff;padding:10px 12px}
+.stats b{display:block;font-size:22px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.stats span{font-size:12.5px;color:var(--mute)}
+.stats .wide{grid-column:1/-1}
+.tour-stops{list-style:none;display:flex;flex-direction:column;gap:4px;margin-top:12px}
+.tour-stops button{all:unset;cursor:pointer;display:grid;grid-template-columns:26px 1fr;gap:10px;padding:8px;border-radius:10px;width:100%;box-sizing:border-box}
+.tour-stops button:hover{background:rgba(30,36,34,.05)}
+.tour-stops button[aria-current]{background:rgba(47,75,255,.09)}
+.tour-stops .n{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--cobalt);color:var(--cobalt);display:grid;place-items:center;font-size:12px;font-weight:600}
+.tour-stops button[aria-current] .n{background:var(--cobalt);color:#fff}
+.tour-stops b{font-weight:600;font-size:14.5px}
+.tour-stops p{font-size:13.5px;color:var(--mute);margin-top:2px}
+.intro{font-size:14px;color:#36403B;margin-top:10px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hint{font-size:13px;color:var(--mute);margin-top:8px}
+.bar{position:fixed;top:14px;right:14px;z-index:10;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.chips{display:flex;gap:4px;background:var(--panel);backdrop-filter:blur(16px);padding:5px;border-radius:30px;box-shadow:0 20px 40px -24px rgba(30,36,34,.45);flex-wrap:wrap;justify-content:flex-end}
+.chips button{border:0;background:transparent;padding:7px 13px;border-radius:24px;font-size:14px;font-weight:500}
+.chips button:hover{background:rgba(30,36,34,.07)}
+.chips button[aria-pressed="true"]{background:var(--ink);color:var(--white)}
+.ctrls{background:var(--panel);backdrop-filter:blur(16px);border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;width:280px;box-shadow:0 20px 40px -24px rgba(30,36,34,.45)}
+.ctrls label{display:flex;justify-content:space-between;align-items:center;font-size:14px;gap:12px}
+.ctrls input[type=range]{width:150px;accent-color:var(--cobalt)}
+.tog{width:36px;height:20px;border-radius:10px;border:0;background:#B9C0BA;position:relative;flex:none}
+.tog::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}
+.tog[aria-checked="true"]{background:var(--cobalt)}
+.tog[aria-checked="true"]::after{transform:translateX(16px)}
+.export{position:fixed;right:14px;bottom:14px;z-index:10;display:flex;gap:6px;background:var(--panel);backdrop-filter:blur(16px);padding:6px;border-radius:16px;box-shadow:0 20px 40px -24px rgba(30,36,34,.45)}
+.export button{border:0;background:transparent;padding:8px 14px;border-radius:11px;font-weight:500}
+.export button:hover{background:rgba(30,36,34,.07)}
+.tip{position:fixed;z-index:20;pointer-events:none;background:var(--ink);color:var(--white);padding:8px 12px;border-radius:10px;font-size:13.5px;transform:translate(14px,14px);max-width:260px}
+.tip b{display:block;font-size:14.5px}
+.tip span{color:#BAC4BC}
+.caption{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:9;width:min(560px,calc(100vw - 420px - 220px));background:var(--ink);color:var(--white);border-radius:18px;padding:16px 20px;box-shadow:0 30px 60px -20px rgba(0,0,0,.4)}
+.caption .k{font-size:12.5px;color:#9DAEFF}
+.caption b{display:block;font-size:20px;letter-spacing:-.02em;margin-top:2px}
+.caption p{color:#D3DAD5;margin-top:6px;font-size:15px}
+.caption .row{margin-top:12px;justify-content:space-between}
+.caption .btn{background:#fff;color:var(--ink)}
+.caption .btn.ghost{background:transparent;color:#fff;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.5)}
+.loading{position:fixed;inset:0;z-index:30;display:grid;place-items:center;background:rgba(197,205,194,.55);backdrop-filter:blur(6px)}
+.loading div{background:var(--white);padding:22px 26px;border-radius:18px;min-width:300px;box-shadow:0 30px 60px -30px rgba(30,36,34,.5)}
+.loading b{font-size:19px;display:block}
+.loading p{color:var(--mute);margin-top:4px;font-size:14px}
+.loading .prog{height:4px;border-radius:2px;background:rgba(30,36,34,.1);margin-top:14px;overflow:hidden}
+.loading .prog i{display:block;height:100%;width:40%;background:var(--cobalt);border-radius:2px;animation:slide 1.2s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+.err{color:#B3261E;font-size:14px;margin-top:8px}
+dialog{margin:auto;border:0;border-radius:20px;padding:0;width:min(460px,calc(100vw - 32px));box-shadow:0 30px 80px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(30,36,34,.35)}
+.sheet{padding:24px;display:flex;flex-direction:column;gap:12px}
+.sheet h2{font-weight:700;font-size:28px;letter-spacing:-.03em}
+.sheet p{color:var(--mute)}
+.sheet label{display:flex;flex-direction:column;gap:5px;font-size:14px;font-weight:500}
+.sheet input{border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:#fff}
+.toast{position:fixed;top:18px;left:50%;transform:translate(-50%,-160%);background:var(--ink);color:var(--white);padding:10px 18px;border-radius:12px;z-index:40;transition:transform .3s}
+.toast.on{transform:translate(-50%,0)}
+.attrib{position:fixed;left:390px;bottom:16px;z-index:5;font-size:12px;color:rgba(30,36,34,.6)}
+.attrib a{color:inherit}
+body.dark .attrib{color:rgba(255,255,255,.6)}
+.panel-toggle{display:none}
+@media (max-width:900px){.panel{width:auto;right:14px;top:auto;height:52vh;bottom:14px}.panel.min{height:60px}.panel-toggle{display:inline}.bar{top:10px;right:10px}.ctrls{display:none}.export{top:62px;bottom:auto;right:10px}.caption{width:calc(100vw - 28px);bottom:calc(52vh + 24px)}.attrib{display:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="3D model of the selected place"></canvas>
+
+<aside class="panel" id="panel">
+  <div class="ph"><a class="mark" href="./"><i></i>Diorama</a><span class="row"><button class="link panel-toggle" id="minPanel">Hide</button><button class="link" id="openSettings">Settings</button></span></div>
+  <div class="scroll">
+    <form class="blk" id="locForm">
+      <h2>Where?</h2>
+      <div class="field"><input id="q" placeholder="Google Maps link, address or coordinates" autocomplete="off" aria-label="Location"><button class="btn" id="build">Build</button></div>
+      <div class="radius"><label for="radius">Radius</label><input type="range" id="radius" min="150" max="1200" step="25" value="400"><output id="rOut">400 m</output></div>
+      <div class="err" id="err" role="alert" hidden></div>
+      <div class="recent" id="recent"></div>
+    </form>
+    <div class="blk" id="placeBlk" hidden>
+      <div class="place"><h1 id="pName"></h1><p id="pCoords"></p></div>
+      <div class="stats" id="stats"></div>
+    </div>
+    <div class="blk" id="tourBlk" hidden>
+      <h2>Guided tour</h2>
+      <div class="row"><button class="btn" id="tourGo">Take the tour</button><span class="hint" id="tourHint"></span></div>
+      <p class="intro" id="tourIntro"></p>
+      <ol class="tour-stops" id="stops"></ol>
+    </div>
+    <form class="blk" id="restyleForm">
+      <h2>Restyle with words</h2>
+      <div class="field"><input id="styleQ" placeholder="Rainy neon night, or a pastel toy village" autocomplete="off" aria-label="Describe a style"><button class="btn">Restyle</button></div>
+      <p class="hint" id="styleHint">Claude picks the colors and light. Without a key, the closest built-in style is used.</p>
+    </form>
+  </div>
+</aside>
+
+<div class="bar">
+  <div class="chips" id="chips" role="group" aria-label="Style"></div>
+  <div class="ctrls">
+    <label for="tod">Time of day<input type="range" id="tod" min="0" max="1" step=".01" value=".38"></label>
+    <label>Tilt-shift blur<button class="tog" role="switch" aria-checked="true" id="tTilt" aria-label="Tilt-shift blur"></button></label>
+    <label>Turntable spin<button class="tog" role="switch" aria-checked="true" id="tSpin" aria-label="Turntable spin"></button></label>
+    <label>Building info on hover<button class="tog" role="switch" aria-checked="true" id="tHover" aria-label="Building info on hover"></button></label>
+    <button class="btn ghost" id="home">Reset view</button>
+  </div>
+</div>
+<div class="export"><button id="png">Save picture</button><button id="glb">Save 3D model</button><button id="share">Copy link</button></div>
+<div class="caption" id="caption" hidden aria-live="polite"><span class="k" id="capK"></span><b id="capT"></b><p id="capP"></p><div class="row"><button class="btn ghost" id="capPrev">Back</button><span><button class="btn ghost" id="capStop">End tour</button> <button class="btn" id="capNext">Next stop</button></span></div></div>
+<div class="tip" id="tip" hidden></div>
+<div class="loading" id="loading" hidden><div><b id="lT">Building your model</b><p id="lP">Finding the place</p><div class="prog"><i></i></div></div></div>
+<div class="attrib">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>
+<dialog id="dlgSettings"><form method="dialog" class="sheet">
+  <h2>Settings</h2>
+  <p>The tour guide and word restyling use Claude through this site's key. You can paste your own Anthropic key instead; it stays in this browser.</p>
+  <label>Anthropic API key<input id="sKey" type="password" autocomplete="off" placeholder="sk-ant-..."></label>
+  <label>Access code (if the owner set one)<input id="sCode" type="password" autocomplete="off"></label>
+  <label>Model<input id="sModel" placeholder="claude-sonnet-5-5"></label>
+  <div class="row" style="justify-content:flex-end"><button value="cancel" class="btn ghost">Close</button><button value="ok" class="btn" id="sSave">Save</button></div>
+</form></dialog>
+<div class="toast" id="toast" role="status"></div>
+<script type="module" src="assets/workshop.js"></script>
+</body>
+</html>
