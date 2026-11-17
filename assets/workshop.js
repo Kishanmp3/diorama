@@ -1,7 +1,7 @@
 import { Diorama, STYLES } from './engine.js';
 import { locate, fetchOSM, toFeatures, stats, reverseName, centroid, area } from './osm.js';
 import { sampleCity } from './city.js';
-import { claude, aiStatus, settings, textOf, extractJSON } from './ai-client.js';
+import { claude, aiStatus, textOf, extractJSON, setupKeyUI } from './ai-client.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -91,6 +91,8 @@ function localTour(C) {
 }
 async function startTour() {
   const C = candidates(); if (!C.length) { toast('Nothing to tour here yet.'); return; }
+  let asked = false; try { asked = sessionStorage.getItem('dio.keyAsked') === '1'; sessionStorage.setItem('dio.keyAsked', '1'); } catch {}
+  if (!asked && !(await keyUI.require('Add your Anthropic API key and Claude narrates the tour. Or close this for a simple tour.'))) return;
   $('#tourGo').disabled = true; $('#tourHint').textContent = 'Planning the route';
   let plan;
   try {
@@ -98,7 +100,7 @@ async function startTour() {
     if (st.ready) {
       const res = await claude({ system: 'You are a witty, knowledgeable local guide narrating a tour of a 3D tabletop model built from OpenStreetMap. Use real knowledge of the place when you have it (history, architecture, what locals know), and never invent facts about a specific building you do not recognize; describe what the data shows instead. Reply only with JSON: {"intro": string (1-2 sentences), "stops": [{"id": candidate id, "title": short title, "text": 2-3 vivid sentences}]} with 4 or 5 stops ordered as a pleasant route.', messages: [{ role: 'user', content: `Place: ${state.name}\nRadius: ${state.R} m\nStats: ${JSON.stringify({ buildings: state.stats.buildings, avgHeight: Math.round(state.stats.avgHeight), roadKm: +state.stats.roadKm.toFixed(1) })}\nCandidates: ${JSON.stringify(C.map(({ x, z, h, ...c }) => c))}` }], max_tokens: 1500 });
       plan = extractJSON(textOf(res));
-    } else { plan = localTour(C); $('#tourHint').textContent = 'Simple tour. Add a Claude key in Settings for real narration.'; }
+    } else { plan = localTour(C); $('#tourHint').textContent = 'Simple tour. Add your API key to have Claude narrate it.'; }
   } catch (e) { plan = localTour(C); $('#tourHint').textContent = `Guide unavailable (${e.message}). Simple tour instead.`; }
   plan.stops = (plan.stops || []).map(s => ({ ...s, c: C.find(c => c.id === s.id) })).filter(s => s.c);
   if (!plan.stops.length) plan = localTour(C), plan.stops = plan.stops.map(s => ({ ...s, c: C.find(c => c.id === s.id) }));
@@ -128,7 +130,7 @@ $('#restyleForm').onsubmit = async (e) => {
   e.preventDefault(); const q = $('#styleQ').value.trim(); if (!q) return; const btn = e.submitter; btn.disabled = true; $('#styleHint').textContent = 'Mixing colors';
   try {
     const st = await aiStatus();
-    if (!st.ready) { setStyle(nearestStyle(q)); $('#styleHint').textContent = `Closest built-in style: ${STYLES[state.style].label}. Add a Claude key in Settings for custom styles.`; }
+    if (!st.ready) { setStyle(nearestStyle(q)); $('#styleHint').textContent = `Closest built-in style: ${STYLES[state.style].label}. Add your API key for custom styles.`; }
     else {
       const res = await claude({ system: 'You art-direct a 3D tabletop city model. Reply only with JSON for a material style: {"label": 1-3 words, "bg": [top hex, bottom hex], "ground": hex, "wall": hex, "roof": hex, "road": hex, "rail": hex, "water": hex, "park": hex, "sand": hex, "parking": hex, "tree": hex, "trunk": hex, "plinth": hex (wood or base color), "night": bool, "windows": hex (lit window color, used if night), "streets": hex (street glow if night), "palette": optional array of 4-7 hex for colorful buildings, "edges": optional hex for outline lines, "vary": 0..0.08, "sun": 0.2..3, "amb": 0.2..1.6, "exposure": 0.7..1.4, "bloom": 0..1.2}. Make it cohesive and beautiful; keep contrast between ground, roads and buildings.', messages: [{ role: 'user', content: q }], max_tokens: 700 });
       const s = extractJSON(textOf(res)); if (!s.bg || !s.wall) throw new Error('style was incomplete');
@@ -146,8 +148,7 @@ $('#glb').onclick = async () => { $('#glb').disabled = true; try { download(awai
 $('#share').onclick = async () => { if (!state.loc) { toast('Build a real place first'); return; } const url = `${new URL("app.html", location.href).href}#at=${state.loc.lat.toFixed(5)},${state.loc.lng.toFixed(5)},${state.R},${state.style === 'custom' ? 'clay' : state.style}`; try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { toast(url); } };
 
 /* ---------- settings ---------- */
-$('#openSettings').onclick = () => { $('#sKey').value = settings.key; $('#sCode').value = settings.code; $('#sModel').value = settings.model; $('#dlgSettings').showModal(); };
-$('#sSave').onclick = () => { settings.key = $('#sKey').value.trim(); settings.code = $('#sCode').value.trim(); settings.model = $('#sModel').value.trim(); toast('Settings saved'); };
+const keyUI = setupKeyUI({ dialog: '#dlgSettings', button: '#openSettings', labels: ['Add API key', 'API key added'], toast });
 $('#minPanel').onclick = () => { $('#panel').classList.toggle('min'); $('#minPanel').textContent = $('#panel').classList.contains('min') ? 'Show' : 'Hide'; };
 
 /* ---------- boot ---------- */

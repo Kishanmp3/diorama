@@ -105,6 +105,8 @@ body.dark .attrib{color:rgba(255,255,255,.6)}
 .panel-toggle{display:none}
 @media (max-width:900px){.panel{width:auto;right:14px;top:auto;height:52vh;bottom:14px}.panel.min{height:60px}.panel-toggle{display:inline}.bar{top:10px;right:10px}.ctrls{display:none}.export{top:62px;bottom:auto;right:10px}.caption{width:calc(100vw - 28px);bottom:calc(52vh + 24px)}.attrib{display:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.kstatus{font-size:13.5px;min-height:1.2em;color:var(--mute)}.kstatus[data-kind=error]{color:#B3261E}
+.link.needs-key{color:var(--cobalt);font-weight:700}
 </style>
 </head>
 <body>
@@ -154,12 +156,13 @@ body.dark .attrib{color:rgba(255,255,255,.6)}
 <div class="loading" id="loading" hidden><div><b id="lT">Building your model</b><p id="lP">Finding the place</p><div class="prog"><i></i></div></div></div>
 <div class="attrib">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></div>
 <dialog id="dlgSettings"><form method="dialog" class="sheet">
-  <h2>Settings</h2>
-  <p>The tour guide and word restyling use Claude through this site's key. You can paste your own Anthropic key instead; it stays in this browser.</p>
-  <label>Anthropic API key<input id="sKey" type="password" autocomplete="off" placeholder="sk-ant-..."></label>
-  <label>Access code (if the owner set one)<input id="sCode" type="password" autocomplete="off"></label>
+  <h2>Your API key</h2>
+  <p>Diorama's tour guide runs on your own Anthropic API key. It's saved only in this browser and sent straight to Anthropic, never to this site's server. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Get a key</a></p>
+  <label>Anthropic API key<input id="sKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."></label>
   <label>Model<input id="sModel" placeholder="claude-sonnet-5-5"></label>
-  <div class="row" style="justify-content:flex-end"><button value="cancel" class="btn ghost">Close</button><button value="ok" class="btn" id="sSave">Save</button></div>
+  <label>Access code<input id="sCode" type="password" autocomplete="off"></label>
+  <p id="sStatus" class="kstatus" role="status" aria-live="polite"></p>
+  <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" id="sForget">Remove key</button><button value="cancel" class="btn ghost">Close</button><button value="ok" class="btn" id="sSave">Save key</button></div>
 </form></dialog>
 <div class="toast" id="toast" role="status"></div>
 <script type="module" src="assets/workshop.js"></script>
