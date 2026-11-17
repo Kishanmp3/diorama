@@ -88,7 +88,7 @@ export class Diorama {
   _woodTex(base) { const c = document.createElement('canvas'); c.width = 1024; c.height = 64; const x = c.getContext('2d'); x.fillStyle = base; x.fillRect(0, 0, 1024, 64); const col = new THREE.Color(base); for (let i = 0; i < 90; i++) { const l = (Math.random() - .5) * .14; x.strokeStyle = `rgba(${l > 0 ? 255 : 0},${l > 0 ? 240 : 0},${l > 0 ? 220 : 0},${Math.abs(l)})`; x.lineWidth = 1 + Math.random() * 2; x.beginPath(); const y0 = Math.random() * 64; x.moveTo(0, y0); for (let k = 0; k <= 1024; k += 32) x.lineTo(k, y0 + Math.sin(k * .01 + i) * 3); x.stroke(); } void col; const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.repeat.set(4, 1); return t; }
   _windowsTex() { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, 128, 128); for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { if (Math.random() < .42) { const a = .45 + Math.random() * .55; x.fillStyle = `rgba(255,${200 + Math.random() * 40 | 0},${120 + Math.random() * 60 | 0},${a})`; x.fillRect(i * 16 + 4, j * 16 + 5, 8, 7); } } const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / 24, 1 / 24); t.colorSpace = THREE.SRGBColorSpace; return t; }
   _buildings(list, S, R) {
-    const wp = [], wn = [], wu = [], wc = [], rp = [], rc = []; const owners = [], rOwners = []; const tmp = new THREE.Color();
+    const wp = [], wn = [], wu = [], wc = [], rp = [], rc = [], dp = [], dc = []; const owners = [], rOwners = []; const tmp = new THREE.Color();
     list.forEach((b, bi) => {
       const ring = b.ring; const h = b.height, y0 = b.minH || 0;
       const base = S.palette ? S.palette[(Math.abs(b.id || bi) * 7) % S.palette.length] : S.wall;
@@ -101,6 +101,7 @@ export class Diorama {
         for (const [x, y, z, uu, vv] of v) { wp.push(x, y, z); wn.push(-nx, 0, -nz); wu.push(uu, vv); wc.push(tmp.r, tmp.g, tmp.b); }
         owners.push(bi, bi); u += L;
       }
+      if (b.house) { this._house(b, bi, h, tmp, S, rp, rc, rOwners, dp, dc); return; }
       const tris = THREE.ShapeUtils.triangulateShape(ring.map(([x, z]) => new THREE.Vector2(x, -z)), []);
       const rcol = S.palette ? tmp : new THREE.Color(S.roof).offsetHSL(0, 0, (((b.id || bi) * 13) % 100 / 100 - .5) * (S.vary || 0) * 2);
       for (const t of tris) { for (const k of [t[0], t[2], t[1]]) { const [x, z] = ring[k]; rp.push(x, h, z); rc.push(rcol.r, rcol.g, rcol.b); } rOwners.push(bi); }
@@ -112,7 +113,62 @@ export class Diorama {
     this.wallMesh = new THREE.Mesh(wg, wm); this.wallMesh.castShadow = this.wallMesh.receiveShadow = true; this.group.add(this.wallMesh);
     const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rp, 3)); rg.setAttribute('color', new THREE.Float32BufferAttribute(rc, 3)); rg.computeVertexNormals();
     this.roofMesh = new THREE.Mesh(rg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9, side: THREE.DoubleSide })); this.roofMesh.castShadow = this.roofMesh.receiveShadow = true; this.group.add(this.roofMesh);
+    if (dp.length) { const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.Float32BufferAttribute(dp, 3)); dg.setAttribute('color', new THREE.Float32BufferAttribute(dc, 3)); dg.computeVertexNormals();
+      const dm = new THREE.Mesh(dg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, side: THREE.DoubleSide, ...(S.night ? { emissive: '#ffffff', emissiveIntensity: 0, emissiveMap: null } : {}) })); dm.castShadow = dm.receiveShadow = true; this.group.add(dm); this.detailMesh = dm; }
     this.wallOwners = owners; this.roofOwners = rOwners; this.buildings = list;
+  }
+  /** Detailed estimated house: gable or hip roof with eaves, door, windows, chimney, porch, garage, driveway. */
+  _house(b, bi, h, wallCol, S, rp, rc, rOwners, dp, dc) {
+    const H = b.house, { cx, cz, ux, uz, fx, fz, w, d } = H;
+    let sd = H.seed || 1; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const W = (lx, ly, lz) => [cx + ux * lx + fx * lz, ly, cz + uz * lx + fz * lz]; // local (along street, up, toward street) to world
+    const tri = (arr, carr, col, ...pts) => { for (const p of pts) { arr.push(...p); carr.push(col.r, col.g, col.b); } };
+    const quad = (arr, carr, col, a, b2, c, d2) => { tri(arr, carr, col, a, b2, c); tri(arr, carr, col, a, c, d2); };
+    const obox = (col, x, y, z, sx, sy, sz) => { // oriented box in house space, into the detail mesh
+      const v = (i, j, k) => W(x + i * sx / 2, y + j * sy / 2, z + k * sz / 2);
+      const f = [[[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], [[1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]], [[-1, -1, -1], [-1, -1, 1], [-1, 1, 1], [-1, 1, -1]], [[1, -1, 1], [1, -1, -1], [1, 1, -1], [1, 1, 1]], [[-1, 1, 1], [1, 1, 1], [1, 1, -1], [-1, 1, -1]]];
+      for (const q of f) quad(dp, dc, col, ...q.map(([i, j, k]) => v(i, j, k)));
+    };
+    const C = (hex) => new THREE.Color(hex);
+    const roofCol = S.palette ? C(S.palette[(H.seed >> 3) % S.palette.length]).offsetHSL(0, -.1, -.12) : C(S.roof).offsetHSL(0, 0, -0.1 - rnd() * .06);
+    const trim = C(S.wall).offsetHSL(0, 0, -0.22), dark = S.night ? C('#1a1712') : C(S.wall).offsetHSL(0, 0, -0.42);
+    const glass = S.night ? C(rnd() < .55 ? S.windows : '#2a3040') : C(S.wall).lerp(C('#8fa4b3'), S.palette ? .9 : .45);
+    const doorCol = S.palette ? C('#7a4b2a') : dark;
+    // roof with eaves
+    const o = .45, rise = Math.min(w, d) * (H.roof === 'gable' ? .42 : .36);
+    if (H.roof === 'gable') { // ridge runs along the street
+      const A = W(-w / 2 - o, h, d / 2 + o), B = W(w / 2 + o, h, d / 2 + o), Cc = W(w / 2 + o, h + rise, 0), D = W(-w / 2 - o, h + rise, 0), E = W(w / 2 + o, h, -d / 2 - o), Fp = W(-w / 2 - o, h, -d / 2 - o);
+      quad(rp, rc, roofCol, A, B, Cc, D); quad(rp, rc, roofCol.clone().offsetHSL(0, 0, -.05), E, Fp, D, Cc); rOwners.push(bi, bi, bi, bi);
+      for (const sx of [-1, 1]) { tri(rp, rc, wallCol, W(sx * w / 2, h, d / 2), W(sx * w / 2, h, -d / 2), W(sx * w / 2, h + rise, 0)); rOwners.push(bi); }
+    } else { // hip
+      const ridge = Math.max(0, w - d) / 2;
+      const P = [W(-w / 2 - o, h, d / 2 + o), W(w / 2 + o, h, d / 2 + o), W(w / 2 + o, h, -d / 2 - o), W(-w / 2 - o, h, -d / 2 - o)], R1 = W(-ridge, h + rise, 0), R2 = W(ridge, h + rise, 0);
+      quad(rp, rc, roofCol, P[0], P[1], R2, R1); quad(rp, rc, roofCol.clone().offsetHSL(0, 0, -.05), P[2], P[3], R1, R2); tri(rp, rc, roofCol.clone().offsetHSL(0, 0, -.03), P[1], P[2], R2); tri(rp, rc, roofCol.clone().offsetHSL(0, 0, -.03), P[3], P[0], R1); rOwners.push(bi, bi, bi, bi, bi, bi);
+    }
+    // front: door, windows
+    const front = d / 2 + .06, doorX = (rnd() - .5) * w * .3;
+    obox(doorCol, doorX, 1.05, front, 1.0, 2.1, .12);
+    const floors = b.levels || 1;
+    for (let fl = 0; fl < floors; fl++) for (const wx of [-w * .32, w * .32, ...(w > 13 ? [0] : [])]) {
+      if (fl === 0 && Math.abs(wx - doorX) < 1.4) continue;
+      obox(glass, wx, 1.6 + fl * 2.9, front, 1.3, 1.15, .1); obox(trim, wx, 1.6 + fl * 2.9 - .66, front + .05, 1.5, .14, .16);
+    }
+    for (const sx of [-1, 1]) for (let fl = 0; fl < floors; fl++) obox(glass, sx * (w / 2 + .06), 1.6 + fl * 2.9, (rnd() - .5) * d * .4, .1, 1.1, 1.2);
+    for (let fl = 0; fl < floors; fl++) for (const bx of [-w * .25, w * .25]) obox(glass, bx, 1.6 + fl * 2.9, -(d / 2 + .06), 1.2, 1.1, .1);
+    // chimney
+    if (H.chimney) obox(C(S.wall).offsetHSL(0, .05, -.18), w * .28, h + rise * .7, -d * .12, .9, rise * 1.1 + 1, .9);
+    // porch
+    if (H.porch) { obox(trim, doorX, .12, front + 1.0, 3.2, .24, 2); obox(roofCol, doorX, 2.7, front + 1.0, 3.4, .16, 2.2); for (const px of [-1.45, 1.45]) obox(trim, doorX + px, 1.35, front + 1.85, .18, 2.5, .18); }
+    // garage + driveway
+    let driveX = doorX, driveW = 1.6;
+    if (H.garage) {
+      const gw = 6.2, gd = Math.min(d * .9, 7.5), gx = H.garage * (w / 2 + gw / 2 - .05), gz = d / 2 - gd / 2, gh = 3.0;
+      obox(wallCol, gx, gh / 2, gz, gw, gh, gd); obox(roofCol, gx, gh + .12, gz, gw + .5, .24, gd + .5);
+      obox(C(S.wall).offsetHSL(0, 0, -.12), gx, 1.15, d / 2 + .06, 4.6, 2.3, .1);
+      driveX = gx; driveW = 5;
+    }
+    const road = C(S.road).lerp(C(S.ground), .35); const len = H.drive + .3;
+    obox(road, driveX, .06, d / 2 + len / 2, driveW, .1, len);
   }
   _trees(F, S, R) {
     const pts = [...F.trees]; let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;

@@ -16,7 +16,7 @@ const tip = $('#tip');
 const d = new Diorama($('#c'), { capture: true, onHover: (b, e) => {
   if (!hoverOn || !b || touring) { tip.hidden = true; return; }
   tip.hidden = false; tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px';
-  tip.innerHTML = `<b>${esc(b.name || kindLabel(b.kind))}</b><span>${Math.round(b.height)} m${b.estimated ? ' (estimated)' : ''}${b.levels ? `, ${b.levels} floors` : ''}${b.name ? `, ${esc(kindLabel(b.kind)).toLowerCase()}` : ''}</span>`;
+  tip.innerHTML = `<b>${esc(b.name || (b.synthetic ? 'House (estimated)' : kindLabel(b.kind)))}</b><span>${Math.round(b.height)} m${b.estimated ? ' (estimated)' : ''}${b.levels ? `, ${b.levels} floors` : ''}${b.name ? `, ${esc(kindLabel(b.kind)).toLowerCase()}` : ''}</span>`;
 } });
 const kindLabel = (k) => ({ yes: 'Building', apartments: 'Apartments', house: 'House', commercial: 'Commercial', retail: 'Shops', office: 'Offices', industrial: 'Industrial', church: 'Church', cathedral: 'Cathedral', school: 'School', university: 'University', hospital: 'Hospital', hotel: 'Hotel', residential: 'Homes', garage: 'Garage', train_station: 'Station' }[k] || (k ? k[0].toUpperCase() + k.slice(1).replace(/_/g, ' ') : 'Building'));
 $('#c').addEventListener('pointerleave', () => tip.hidden = true);
@@ -58,10 +58,11 @@ function renderPlace() {
   const S = stats(state.F); state.stats = S;
   $('#placeBlk').hidden = false; $('#tourBlk').hidden = false;
   $('#pName').textContent = state.name; $('#pCoords').textContent = state.loc ? `${state.loc.lat.toFixed(5)}, ${state.loc.lng.toFixed(5)}, ${state.R} m radius` : 'Sample city';
-  $('#stats').innerHTML = `<div><b>${fmt(S.buildings)}</b><span>Buildings</span></div><div><b>${S.tallest ? Math.round(S.tallest.height) + ' m' : 'n/a'}</b><span>Tallest${S.tallest?.name ? ': ' + esc(S.tallest.name) : ''}</span></div>
+  $('#stats').innerHTML = `<div><b>${fmt(S.buildings)}</b><span>Buildings${S.estimated ? `, ${fmt(S.estimated)} estimated` : ''}</span></div><div><b>${S.tallest ? Math.round(S.tallest.height) + ' m' : 'n/a'}</b><span>Tallest${S.tallest?.name ? ': ' + esc(S.tallest.name) : ''}</span></div>
     <div><b>${fmt(S.avgHeight, 0)} m</b><span>Average height</span></div><div><b>${fmt(S.roadKm, 1)} km</b><span>Roads</span></div>
     <div><b>${fmt(S.parkArea / 1e4, 1)} ha</b><span>Green space</span></div><div><b>${fmt(S.waterArea / 1e4, 1)} ha</b><span>Water</span></div>`;
   $('#stops').innerHTML = ''; $('#tourIntro').textContent = ''; $('#tourHint').textContent = '';
+  $('#estNote').hidden = !S.estimated; $('#estNote').textContent = S.estimated ? `OpenStreetMap hasn't traced the buildings here yet, so ${fmt(S.estimated)} houses were placed ${state.F.addresses?.length ? 'at mapped addresses and ' : ''}along the streets. Their shapes and heights are estimates.` : '';
   document.title = `${state.name.split(',')[0]} in Diorama`;
 }
 function remember(q, name) { if (!q) return; const r = LS.get('dio.recent', []).filter(x => x.q !== q); r.unshift({ q, name: name.split(',')[0] }); LS.set('dio.recent', r.slice(0, 6)); renderRecent(); }

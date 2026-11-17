@@ -42,7 +42,7 @@ export async function fetchOSM(lat, lng, radius, onStatus = () => {}) {
     way["natural"~"water|wood|scrub|grassland|beach|sand"]${a};relation["natural"="water"]${a};way["waterway"~"riverbank|river|canal|stream"]${a};relation["waterway"="riverbank"]${a};
     way["leisure"~"park|garden|pitch|playground|golf_course|nature_reserve|stadium"]${a};relation["leisure"="park"]${a};
     way["landuse"~"grass|forest|meadow|park|recreation_ground|village_green|cemetery"]${a};
-    way["amenity"="parking"]${a};node["natural"="tree"]${a};
+    way["amenity"="parking"]${a};node["natural"="tree"]${a};node["addr:housenumber"]${a};
   );out geom qt;`;
   let lastErr;
   for (const [i, url] of ENDPOINTS.entries()) {
@@ -96,7 +96,7 @@ const DEFAULT_H = { house: 7, detached: 7, residential: 12, apartments: 18, comm
 
 export function toFeatures(osm, lat0, lng0, R) {
   const P = projector(lat0, lng0); const clipC = circlePoly(R);
-  const F = { buildings: [], roads: [], rails: [], water: [], waterLines: [], parks: [], trees: [], parking: [], sand: [] };
+  const F = { buildings: [], roads: [], rails: [], water: [], waterLines: [], parks: [], trees: [], parking: [], sand: [], addresses: [] };
   const ring = (geom) => geom?.map(g => P.to(g.lat, g.lon));
   const inside = (r) => { const c = centroid(r); return c[0] * c[0] + c[1] * c[1] <= R * R; };
   const pushPoly = (list, rings, extra = {}) => { for (let r of rings) { if (r.length < 3) continue; if (area(r) < 0) r = [...r].reverse(); const c = clipPoly(r, clipC); if (c.length >= 3 && Math.abs(area(c)) > 2) list.push({ ring: c, ...extra }); } };
@@ -114,7 +114,7 @@ export function toFeatures(osm, lat0, lng0, R) {
   for (const el of osm.elements) if (el.tags?.['building:part']) hasPart.add('p');
   for (const el of osm.elements) {
     const t = el.tags || {};
-    if (el.type === 'node') { if (t.natural === 'tree') { const p = P.to(el.lat, el.lon); if (p[0] ** 2 + p[1] ** 2 < R * R) F.trees.push(p); } continue; }
+    if (el.type === 'node') { const p = P.to(el.lat, el.lon); if (p[0] ** 2 + p[1] ** 2 >= R * R) continue; if (t.natural === 'tree') F.trees.push(p); else if (t['addr:housenumber']) F.addresses.push(p); continue; }
     const isRel = el.type === 'relation';
     const outers = isRel ? stitch(relRings(el)) : [ring(el.geometry)];
     if (!outers[0]?.length) continue;
@@ -137,12 +137,68 @@ export function toFeatures(osm, lat0, lng0, R) {
   }
   // drop building outlines fully covered by building:parts (avoid z-fighting)
   if (hasPart.size) { const parts = F.buildings.filter(b => b.part); F.buildings = F.buildings.filter(b => b.part || !parts.some(p => { const c = centroid(p.ring); return pointIn(c, b.ring); }) || b.height > Math.max(...parts.filter(p => pointIn(centroid(p.ring), b.ring)).map(p => p.height), 0)); }
+  fillHouses(F, R);
   return F;
 }
+
+/* ---------- estimated houses where OSM has roads but no footprints ---------- */
+const RESIDENTIAL = new Set(['residential', 'living_street', 'unclassified', 'service', 'tertiary', 'road']);
+export function fillHouses(F, R) {
+  const roadLen = F.roads.reduce((s, r) => s + r.pts.reduce((a, p, i) => i ? a + Math.hypot(p[0] - r.pts[i - 1][0], p[1] - r.pts[i - 1][1]) : 0, 0), 0);
+  // Well-mapped areas have roughly 8+ buildings per 100 m of road. Below a quarter of that, fill in.
+  if (F.buildings.length > roadLen / 100 * 2 || roadLen < 80) { F.estimated = 0; return; }
+  const segs = []; for (const r of F.roads) for (let i = 1; i < r.pts.length; i++) segs.push({ a: r.pts[i - 1], b: r.pts[i], w: r.width, kind: r.kind });
+  const CELL = 40, grid = new Map(); const key = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
+  segs.forEach((s, i) => { const n = Math.max(1, Math.ceil(Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) / (CELL / 2))); for (let k = 0; k <= n; k++) { const x = s.a[0] + (s.b[0] - s.a[0]) * k / n, z = s.a[1] + (s.b[1] - s.a[1]) * k / n; const kk = key(x, z); (grid.get(kk) || grid.set(kk, new Set()).get(kk)).add(i); } });
+  const near = (x, z) => { const out = new Set(); const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL); for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const i of grid.get(`${cx + dx},${cz + dz}`) || []) out.add(i); return [...out].map(i => segs[i]); };
+  const segDist = (p, s) => { const vx = s.b[0] - s.a[0], vz = s.b[1] - s.a[1], L2 = vx * vx + vz * vz || 1; let t = ((p[0] - s.a[0]) * vx + (p[1] - s.a[1]) * vz) / L2; t = Math.max(0, Math.min(1, t)); const qx = s.a[0] + vx * t, qz = s.a[1] + vz * t; return { d: Math.hypot(p[0] - qx, p[1] - qz), q: [qx, qz], dir: [vx, vz] }; };
+  const houses = [], hgrid = new Map();
+  const tooClose = (x, z, gap) => { const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL); for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const h of hgrid.get(`${cx + dx},${cz + dz}`) || []) if (Math.hypot(h[0] - x, h[1] - z) < gap) return true; return false; };
+  const blocked = (x, z, clear) => { if (x * x + z * z > (R - 10) ** 2) return true; for (const s of near(x, z)) if (segDist([x, z], s).d < s.w / 2 + clear) return true; for (const w of F.water) if (pointIn([x, z], w.ring)) return true; for (const b of F.buildings) if (Math.abs(b.ring[0][0] - x) < 60 && pointIn([x, z], b.ring)) return true; return false; };
+  let seed = 9; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const place = (x, z, dir, front, drive, extra = {}) => {
+    const L = Math.hypot(dir[0], dir[1]) || 1, ux = dir[0] / L, uz = dir[1] / L, nx = -uz, nz = ux;
+    let fx = front ? front[0] : nx, fz = front ? front[1] : nz; const FL = Math.hypot(fx, fz) || 1; fx /= FL; fz /= FL;
+    const w = 11 + rnd() * 5, d = 12 + rnd() * 5, hw = w / 2, hd = d / 2;
+    const ring = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([a, b]) => [x + ux * a + nx * b, z + uz * a + nz * b]);
+    if (area(ring) < 0) ring.reverse();
+    const one = rnd() < .7;
+    const house = { cx: x, cz: z, ux, uz, fx, fz, w, d, roof: rnd() < .62 ? 'gable' : 'hip', garage: rnd() < .45 ? (rnd() < .5 ? 1 : -1) : 0, chimney: rnd() < .5, porch: rnd() < .4, drive: Math.max(2, drive || 7), seed: Math.floor(rnd() * 1e6) };
+    F.buildings.push({ ring, height: one ? 3.4 + rnd() * 0.8 : 6.2 + rnd() * 0.8, minH: 0, name: null, kind: 'house', levels: one ? 1 : 2, estimated: true, synthetic: true, id: 9e8 + houses.length, house, ...extra });
+    houses.push([x, z]); const kk = key(x, z); (hgrid.get(kk) || hgrid.set(kk, []).get(kk)).push([x, z]);
+  };
+  // 1) real address points, turned to face their nearest street
+  for (const p of F.addresses) {
+    if (tooClose(p[0], p[1], 9) || blocked(p[0], p[1], 3)) continue;
+    let best = null; for (const s of near(p[0], p[1])) { const r = segDist(p, s); if (!best || r.d < best.d) best = r; }
+    place(p[0], p[1], best ? best.dir : [1, 0], best ? [best.q[0] - p[0], best.q[1] - p[1]] : null, best ? best.d - 9 : 6, { fromAddress: true });
+  }
+  // 2) if addresses were sparse, line residential streets with houses
+  if (houses.length < roadLen / 100 * 2) {
+    for (const r of F.roads) {
+      if (!RESIDENTIAL.has(r.kind) || r.tunnel || r.bridge) continue;
+      const off = r.width / 2 + 14; let carry = 8 + rnd() * 8;
+      for (let i = 1; i < r.pts.length; i++) {
+        const [ax, az] = r.pts[i - 1], [bx, bz] = r.pts[i]; const vx = bx - ax, vz = bz - az, L = Math.hypot(vx, vz); if (L < .01) continue;
+        const ux = vx / L, uz = vz / L, nx = -uz, nz = ux;
+        let t = carry;
+        for (; t < L; t += 24 + rnd() * 6) for (const side of [-1, 1]) {
+          if (rnd() < .1) continue;
+          const x = ax + ux * t + nx * off * side, z = az + uz * t + nz * off * side;
+          if (tooClose(x, z, 17) || blocked(x, z, 7)) continue;
+          place(x, z, [vx, vz], [-nx * side, -nz * side], off - r.width / 2);
+        }
+        carry = t - L;
+      }
+    }
+  }
+  F.estimated = houses.length;
+}
+
 export function pointIn(p, r) { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) if ((r[i][1] > p[1]) !== (r[j][1] > p[1]) && p[0] < (r[j][0] - r[i][0]) * (p[1] - r[i][1]) / (r[j][1] - r[i][1]) + r[i][0]) c = !c; return c; }
 
 export function stats(F) {
   const tall = [...F.buildings].sort((a, b) => b.height - a.height);
   const len = (pts) => pts.reduce((s, p, i) => i ? s + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0, 0);
-  return { buildings: F.buildings.length, tallest: tall[0] || null, roadKm: F.roads.reduce((s, r) => s + len(r.pts), 0) / 1000, parkArea: F.parks.reduce((s, p) => s + Math.abs(area(p.ring)), 0), waterArea: F.water.reduce((s, p) => s + Math.abs(area(p.ring)), 0), trees: F.trees.length, avgHeight: F.buildings.reduce((s, b) => s + b.height, 0) / Math.max(1, F.buildings.length) };
+  return { buildings: F.buildings.length, estimated: F.estimated || 0, tallest: tall[0] || null, roadKm: F.roads.reduce((s, r) => s + len(r.pts), 0) / 1000, parkArea: F.parks.reduce((s, p) => s + Math.abs(area(p.ring)), 0), waterArea: F.water.reduce((s, p) => s + Math.abs(area(p.ring)), 0), trees: F.trees.length, avgHeight: F.buildings.reduce((s, b) => s + b.height, 0) / Math.max(1, F.buildings.length) };
 }
